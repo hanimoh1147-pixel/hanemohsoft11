@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111111">
+  <title>هاني سوفت | منصة خدمات الهواتف</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#"><span class="brand-mark">HS</span><span>هاني <b>سوفت</b><small>منصة خدمات الهواتف والسوفت وير</small></span></a>
+  <nav><a href="#services">الخدمات</a><a href="#wallet">المحفظة</a><a href="#orders">طلباتي</a><a href="#reviews">التقييمات</a></nav>
+  <div class="top-actions"><span id="userLabel" class="muted">زائر</span><button id="logoutBtn" class="btn ghost hidden">تسجيل خروج</button></div>
+</header>
+<main>
+  <section class="hero">
+    <div class="hero-copy"><span class="eyebrow">خدمات رقمية في مكان واحد</span><h1>كل خدمات السوفت وير<br><em>بسهولة وأمان</em></h1>
+      <p>اطلب الخدمة، تابع حالة التنفيذ، وأدر رصيدك من حساب واحد.</p>
+      <div class="hero-actions"><a class="btn gold" href="#services">استكشف الخدمات</a><button class="btn outline" id="heroLogin">دخول / إنشاء حساب</button></div>
+      <div class="stats"><div><b>24/7</b><span>تقديم الطلبات</span></div><div><b>آمن</b><span>سجل مالي واضح</span></div><div><b>مباشر</b><span>متابعة الحالة</span></div></div>
+    </div>
+    <div class="hero-panel"><div class="orb"></div><div class="panel-head"><span class="live-dot"></span> لوحة العميل</div><div class="balance-card"><small>رصيد المحفظة</small><strong id="heroBalance">—</strong><span>يظهر بعد تسجيل الدخول</span></div><div class="mini-row"><span>طلباتك</span><b id="heroOrders">—</b></div><div class="mini-row"><span>حالة الحساب</span><b class="gold-text">محمي</b></div></div>
+  </section>
+
+  <section class="section" id="services"><div class="section-title"><div><span class="eyebrow">كتالوج الخدمات</span><h2>خدمات السوفت وير</h2></div><p>الأسعار والتوفر يحددهما مدير المنصة.</p></div>
+    <div id="serviceGrid" class="service-grid"><div class="empty">أضف رابط Supabase ومفتاحه العام في config.js لتشغيل الخدمات.</div></div>
+  </section>
+
+  <section class="section two-col" id="wallet">
+    <div class="box"><span class="eyebrow">المحفظة</span><h2>الرصيد والتحويل</h2><p class="muted">شحن الرصيد لا يُعتمد إلا بعد التحقق من الدفع أو اعتماد المالك/المسؤول. لا ترسل كلمة مرورك أو بيانات بطاقتك في ملاحظات الطلب.</p>
+      <div class="wallet-balance"><small>رصيدك الحالي</small><strong id="walletBalance">—</strong></div>
+      <form id="transferForm" class="stack"><label>اسم مستخدم المستلم<input name="recipient" required placeholder="username"></label><label>المبلغ<input name="amount" type="number" min="1" step="0.01" required placeholder="0.00"></label><label>ملاحظة (اختياري)<input name="note" maxlength="120" placeholder="سبب التحويل"></label><button class="btn gold" type="submit">تحويل الرصيد</button></form>
+      <hr><h3>طلب شحن رصيد</h3><p class="muted">هذه النسخة تسجل طلب شحن للمراجعة. الدفع الإلكتروني الحقيقي يحتاج ربط بوابة دفع معتمدة.</p>
+      <form id="depositForm" class="stack"><label>المبلغ المطلوب<input name="amount" type="number" min="1" step="0.01" required></label><label>العملة<select name="currency"><option value="USD">USD — دولار (العملة المتاحة حاليًا)</option></select></label><label>مرجع العملية أو التفاصيل<input name="reference" maxlength="160" placeholder="لا تضع بيانات بطاقة أو كلمة مرور"></label><button class="btn outline" type="submit">إرسال طلب الشحن</button></form>
+    </div>
+    <div class="box" id="orders"><span class="eyebrow">متابعة التنفيذ</span><h2>طلباتي</h2><p class="muted">يمكنك متابعة الطلبات وتقييم الخدمة بعد إكمالها.</p><div id="ordersList" class="list"><div class="empty">سجّل الدخول لعرض طلباتك.</div></div><hr><h3>حركات المحفظة</h3><div id="ledgerList" class="list"><div class="empty">سجّل الدخول لعرض الحركات.</div></div></div>
+  </section>
+
+  <section class="section" id="reviews"><div class="section-title"><div><span class="eyebrow">آراء العملاء</span><h2>تقييمات المنصة</h2></div></div><div id="reviewGrid" class="review-grid"><div class="empty">لا توجد تقييمات منشورة بعد.</div></div></section>
+
+  <section id="admin" class="section hidden"><div class="section-title"><div><span class="eyebrow">إدارة المنصة</span><h2>لوحة الإدارة</h2></div><span class="pill">صلاحيات حسب الحساب</span></div>
+    <div class="admin-grid">
+      <div class="box"><h3>إضافة خدمة</h3><form id="serviceForm" class="stack"><label>اسم الخدمة<input name="name" required></label><label>التصنيف<input name="category" required placeholder="FRP / iCloud / برمجة"></label><label>الوصف<textarea name="description" rows="2"></textarea></label><label>السعر<input name="price" type="number" min="0" step="0.01" required></label><label>العملة<select name="currency"><option>USD</option></select></label><button class="btn gold" type="submit">حفظ الخدمة</button></form></div>
+      <div class="box"><h3>اعتماد طلب شحن</h3><div id="depositQueue" class="list"><div class="empty">لا توجد طلبات أو لا تملك الصلاحية.</div></div></div>
+      <div class="box"><h3>طلبات العملاء</h3><div id="adminOrders" class="list"><div class="empty">لا توجد طلبات أو لا تملك الصلاحية.</div></div></div>
+    </div>
+  </section>
+</main>
+<footer><div class="brand"><span class="brand-mark">HS</span><span>هاني <b>سوفت</b><small>منصة خدمات رقمية</small></span></div><div class="contact"><span>المالك: <bdi>+84562812172</bdi></span><span>المسؤول: <bdi>+966 55 492 1073</bdi></span></div><small>© هاني سوفت — تُنفّذ الخدمات وفق شروط كل خدمة.</small></footer>
+
+<div class="modal hidden" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authTitle"><div class="modal-card"><button id="closeAuth" class="close" aria-label="إغلاق">×</button><span class="eyebrow">حساب العميل</span><h2 id="authTitle">دخول أو إنشاء حساب</h2><div class="tabs"><button class="tab active" data-tab="login">تسجيل الدخول</button><button class="tab" data-tab="signup">حساب جديد</button></div>
+  <form id="loginForm" class="stack"><label>اسم المستخدم أو البريد الإلكتروني<input name="identifier" required autocomplete="username"></label><label>كلمة المرور<input name="password" type="password" required autocomplete="current-password"></label><button class="btn gold" type="submit">دخول</button></form>
+  <form id="signupForm" class="stack hidden"><label>اسم المستخدم<input name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" placeholder="hany_user"></label><label>البريد الإلكتروني<input name="email" type="email" required autocomplete="email"></label><label>كلمة المرور<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><button class="btn gold" type="submit">إنشاء الحساب</button><small class="muted">قد تحتاج لتأكيد البريد قبل تسجيل الدخول، حسب إعدادات Supabase.</small></form>
+  <p id="authMessage" class="message" aria-live="polite"></p></div></div>
+<div id="toast" class="toast" role="status"></div>
+</body></html>
