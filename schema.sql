@@ -74,6 +74,11 @@ create table if not exists public.reviews (
   created_at timestamptz not null default now()
 );
 
+-- حقول التواصل لكل طلب: تعليق العميل وبريده والرد الرسمي من الإدارة.
+alter table public.orders add column if not exists customer_comment text not null default '';
+alter table public.orders add column if not exists reply_email text not null default '';
+alter table public.orders add column if not exists admin_reply text not null default '';
+
 create index if not exists orders_user_created_idx on public.orders(user_id, created_at desc);
 create index if not exists ledger_user_created_idx on public.wallet_transactions(user_id, created_at desc);
 create index if not exists deposits_status_created_idx on public.deposit_requests(status, created_at);
@@ -288,3 +293,39 @@ grant execute on function public.submit_service_review(uuid,int,text) to authent
 -- from auth.users u where p.id=u.id and lower(u.email)=lower('ADMIN_EMAIL_HERE');
 --
 -- ملاحظة مهمة: هذا المخطط لا يربط بوابة دفع حقيقية. deposit_requests طلبات مراجعة فقط.
+
+
+-- العميل يحدّث تعليقه وبريد الرد على طلبه فقط.
+create or replace function public.submit_order_comment(p_order_id uuid, p_comment text, p_reply_email text)
+returns void language plpgsql security definer
+set search_path = ''
+as $$
+declare v_uid uuid := auth.uid();
+begin
+  if v_uid is null then raise exception 'يجب تسجيل الدخول'; end if;
+  if coalesce(length(trim(p_comment)),0) > 2000 then raise exception 'التعليق أطول من المسموح'; end if;
+  if coalesce(length(trim(p_reply_email)),0) > 254 or trim(p_reply_email) !~* '^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$' then
+    raise exception 'أدخل بريدًا إلكترونيًا صحيحًا';
+  end if;
+  update public.orders set customer_comment=left(trim(coalesce(p_comment,'')),2000), reply_email=lower(trim(p_reply_email)), updated_at=now()
+  where id=p_order_id and user_id=v_uid;
+  if not found then raise exception 'الطلب غير موجود أو لا تملك صلاحية تعديله'; end if;
+end;
+$$;
+revoke all on function public.submit_order_comment(uuid,text,text) from public, anon;
+grant execute on function public.submit_order_comment(uuid,text,text) to authenticated;
+
+-- الرد الرسمي متاح فقط لحسابات الإدارة المخوّلة بإدارة الطلبات.
+create or replace function public.admin_reply_to_order(p_order_id uuid, p_reply text)
+returns void language plpgsql security definer
+set search_path = ''
+as $$
+begin
+  if not private.is_staff('manage_orders') then raise exception 'ليس لديك صلاحية الرد على الطلبات'; end if;
+  if coalesce(length(trim(p_reply)),0) > 4000 then raise exception 'الرد أطول من المسموح'; end if;
+  update public.orders set admin_reply=left(trim(coalesce(p_reply,'')),4000), updated_at=now() where id=p_order_id;
+  if not found then raise exception 'الطلب غير موجود'; end if;
+end;
+$$;
+revoke all on function public.admin_reply_to_order(uuid,text) from public, anon;
+grant execute on function public.admin_reply_to_order(uuid,text) to authenticated;
