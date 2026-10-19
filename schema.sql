@@ -9,6 +9,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text not null unique check (username ~ '^[a-zA-Z0-9_]{3,24}$'),
   display_name text,
+  phone text not null default '',
   role text not null default 'customer' check (role in ('customer','admin','owner')),
   permissions text[] not null default '{}',
   wallet_balance numeric(14,2) not null default 0 check (wallet_balance >= 0),
@@ -78,6 +79,16 @@ create table if not exists public.reviews (
 alter table public.orders add column if not exists customer_comment text not null default '';
 alter table public.orders add column if not exists reply_email text not null default '';
 alter table public.orders add column if not exists admin_reply text not null default '';
+alter table public.orders add column if not exists device_email text not null default '';
+alter table public.profiles add column if not exists phone text not null default '';
+alter table public.deposit_requests add column if not exists receipt_note text not null default '';
+alter table public.deposit_requests add column if not exists reply_email text not null default '';
+alter table public.deposit_requests add column if not exists admin_reply text not null default '';
+
+create table if not exists public.platform_settings (key text primary key, value text not null default '', updated_by uuid references auth.users(id), updated_at timestamptz not null default now());
+alter table public.platform_settings enable row level security;
+grant select on public.platform_settings to anon, authenticated;
+grant insert, update, delete on public.platform_settings to authenticated;
 
 create index if not exists orders_user_created_idx on public.orders(user_id, created_at desc);
 create index if not exists ledger_user_created_idx on public.wallet_transactions(user_id, created_at desc);
@@ -101,6 +112,12 @@ $$;
 revoke all on function private.is_staff(text) from public, anon;
 grant usage on schema private to authenticated;
 grant execute on function private.is_staff(text) to authenticated;
+
+drop policy if exists "public read platform settings" on public.platform_settings;
+create policy "public read platform settings" on public.platform_settings for select to anon, authenticated using (key in ('bank_name','bank_account','bank_instructions'));
+drop policy if exists "staff manage platform settings" on public.platform_settings;
+create policy "staff manage platform settings" on public.platform_settings for all to authenticated using (private.is_staff('manage_services')) with check (private.is_staff('manage_services'));
+
 
 -- إنشاء ملف العميل من بيانات التسجيل الوصفية.
 create or replace function public.handle_new_user()
@@ -203,6 +220,28 @@ $$;
 revoke all on function public.create_service_order(uuid) from public, anon;
 grant execute on function public.create_service_order(uuid) to authenticated;
 
+-- طلب خدمة مع البريد المرتبط بالجهاز وبريد الرد وتفاصيل العميل.
+create or replace function public.create_service_order_details(p_service_id uuid,p_device_email text,p_reply_email text,p_comment text)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare v_uid uuid := auth.uid(); v_service public.services%rowtype; v_order uuid;
+begin
+  if v_uid is null then raise exception 'يجب تسجيل الدخول'; end if;
+  if coalesce(length(trim(p_device_email)),0)>254 or trim(p_device_email) !~* '^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$' then raise exception 'أدخل بريد الجهاز بصيغة صحيحة'; end if;
+  if coalesce(length(trim(p_reply_email)),0)>254 or trim(p_reply_email) !~* '^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$' then raise exception 'أدخل بريد الرد بصيغة صحيحة'; end if;
+  if coalesce(length(trim(p_comment)),0)<1 or length(p_comment)>2000 then raise exception 'اكتب تفاصيل الطلب (حتى 2000 حرف)'; end if;
+  select * into v_service from public.services where id=p_service_id and is_active=true for share;
+  if not found then raise exception 'الخدمة غير متاحة'; end if;
+  if v_service.currency <> 'USD' then raise exception 'العملة المدعومة لخصم الرصيد حالياً هي USD فقط'; end if;
+  update public.profiles set wallet_balance=wallet_balance-v_service.price where id=v_uid and wallet_balance>=v_service.price;
+  if not found then raise exception 'الرصيد غير كافٍ'; end if;
+  insert into public.orders(user_id,service_id,service_name,amount,currency,device_email,reply_email,customer_comment)
+  values(v_uid,v_service.id,v_service.name,v_service.price,v_service.currency,lower(trim(p_device_email)),lower(trim(p_reply_email)),left(trim(p_comment),2000)) returning id into v_order;
+  insert into public.wallet_transactions(user_id,kind,amount,currency,related_order_id,note) values(v_uid,'service_debit',v_service.price,v_service.currency,v_order,'خصم مقابل طلب خدمة: '||v_service.name);
+  return v_order;
+end; $$;
+revoke all on function public.create_service_order_details(uuid,text,text,text) from public,anon;
+grant execute on function public.create_service_order_details(uuid,text,text,text) to authenticated;
+
 create or replace function public.transfer_wallet(p_recipient_username text,p_amount numeric,p_note text default '')
 returns void language plpgsql security definer
 set search_path = ''
@@ -270,7 +309,7 @@ declare v_uid uuid := auth.uid(); v_review uuid;
 begin
   if v_uid is null then raise exception 'يجب تسجيل الدخول'; end if;
   if p_rating < 1 or p_rating > 5 then raise exception 'التقييم يجب أن يكون بين 1 و5'; end if;
-  if not exists(select 1 from public.orders where id=p_order_id and user_id=v_uid and status='completed') then
+  if not exists(select 1 from public.orders where id=p_order_id and user_id=v_uid and status='completed' and length(trim(coalesce(admin_reply,'')))>0) then
     raise exception 'يمكن تقييم الطلب المكتمل الخاص بك فقط';
   end if;
   insert into public.reviews(order_id,user_id,rating,comment)
@@ -329,3 +368,17 @@ end;
 $$;
 revoke all on function public.admin_reply_to_order(uuid,text) from public, anon;
 grant execute on function public.admin_reply_to_order(uuid,text) to authenticated;
+
+
+-- يتيح للمسؤول الرد على طلب شحن وتحديث حالته دون السماح للعميل بتعديل المراجعة.
+create or replace function public.admin_reply_to_deposit(p_deposit_id uuid,p_reply text,p_status text default 'pending')
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if not private.is_staff('review_deposits') then raise exception 'ليس لديك صلاحية مراجعة طلبات الشحن'; end if;
+  if p_status not in ('pending','rejected') then raise exception 'حالة غير مسموحة'; end if;
+  if coalesce(length(p_reply),0)>2000 then raise exception 'الرد أطول من المسموح'; end if;
+  update public.deposit_requests set admin_reply=left(coalesce(p_reply,''),2000),status=p_status,reviewed_by=auth.uid(),reviewed_at=now() where id=p_deposit_id and status='pending';
+  if not found then raise exception 'طلب الشحن غير موجود أو تمت مراجعته مسبقاً'; end if;
+end; $$;
+revoke all on function public.admin_reply_to_deposit(uuid,text,text) from public,anon;
+grant execute on function public.admin_reply_to_deposit(uuid,text,text) to authenticated;

@@ -13,6 +13,9 @@
   function authClose(){ $("#authModal").classList.add("hidden"); }
   function authTab(tab){$$(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));$("#loginForm").classList.toggle("hidden",tab!=="login");$("#signupForm").classList.toggle("hidden",tab!=="signup");$("#authTitle").textContent=tab==="login"?"تسجيل الدخول":"إنشاء حساب جديد";msg($("#authMessage"),"")}
   function requireLogin(){if(!currentUser){authOpen();return false}return true}
+  function showPage(id){if(id==='page-admin' && !can('manage_services')&&!can('manage_orders')&&!can('review_deposits')) id='page-services'; if(id==='page-client'&&!currentUser){authOpen();id='page-services'}; $$('.page-view').forEach(v=>v.classList.toggle('hidden',v.id!==id)); $$('.main-nav [data-page-link]').forEach(a=>a.classList.toggle('active',a.dataset.pageLink===id)); if(location.hash!=='#'+id) history.replaceState(null,'','#'+id); }
+  function initPages(){ $$('.main-nav [data-page-link]').forEach(a=>a.addEventListener('click',()=>showPage(a.dataset.pageLink))); window.addEventListener('hashchange',()=>showPage(location.hash.slice(1)||'page-services')); showPage(location.hash.slice(1)||'page-services'); }
+  async function loadBankDetails(){const {data}=await sb.from('platform_settings').select('key,value').in('key',['bank_name','bank_account','bank_instructions']); const v=Object.fromEntries((data||[]).map(x=>[x.key,x.value])); const el=$('#bankDetails'); if(el)el.innerHTML=`<b>بيانات التحويل البنكي</b><p>البنك: ${esc(v.bank_name||'لم يحدد بعد')}</p><p>رقم الحساب: ${esc(v.bank_account||'لم يحدد بعد')}</p><p>${esc(v.bank_instructions||'راجع الإدارة قبل التحويل')}</p>`; const f=$('#bankForm'); if(f){f.elements.bank_name.value=v.bank_name||'';f.elements.bank_account.value=v.bank_account||'';f.elements.bank_instructions.value=v.bank_instructions||'';} }
   async function loadProfile(){
     if(!currentUser){profile=null;return}
     const {data,error}=await sb.from("profiles").select("id,username,display_name,phone,role,permissions,wallet_balance").eq("id",currentUser.id).maybeSingle();
@@ -21,7 +24,6 @@
   }
   function can(permission){return !!profile && (profile.role==="owner" || profile.role==="admin" && (profile.permissions||[]).includes(permission))}
   function renderUser(){
-    $("#profile").classList.toggle("hidden",!currentUser);
     $("#userLabel").textContent=profile?`مرحباً، ${profile.display_name||profile.username}`:"زائر";
     $("#logoutBtn").classList.toggle("hidden",!currentUser);
     if(profile && currentUser){
@@ -30,7 +32,8 @@
       $("#profileEmail").value=currentUser.email||"";
       $("#profilePhone").value=profile.phone||"";
     }
-    $("#admin").classList.toggle("hidden",!(can("manage_services")||can("review_deposits")||can("manage_orders")));
+    const staff=can("manage_services")||can("review_deposits")||can("manage_orders");
+    $("#admin").classList.toggle("hidden",!staff); $("#adminNav").classList.toggle("hidden",!staff); $("#clientNav").classList.toggle("hidden",!currentUser);
     $("#walletBalance").textContent=profile?money(profile.wallet_balance,cfg.DEFAULT_CURRENCY||"USD"):"—";
     $("#heroBalance").textContent=profile?money(profile.wallet_balance,cfg.DEFAULT_CURRENCY||"USD"):"—";
   }
@@ -39,35 +42,15 @@
     if(error){console.error(error);$("#serviceGrid").innerHTML='<div class="empty">تعذر تحميل الخدمات. تحقق من schema.sql وسياسات RLS.</div>';return}
     services=data||[];
     $("#serviceGrid").innerHTML=services.length?services.map(s=>`<article class="service-card"><div class="service-icon">${esc((s.category||"HS").slice(0,2))}</div><h3>${esc(s.name)}</h3><p>${esc(s.description||s.category||"خدمة رقمية")}</p><div class="service-foot"><span class="price">${money(s.price,s.currency)}</span><button class="btn outline order-btn" data-id="${s.id}">اطلب الخدمة</button></div></article>`).join(""):'<div class="empty">لا توجد خدمات منشورة حتى الآن.</div>';
-    $$(".order-btn").forEach(b=>b.onclick=()=>placeOrder(b.dataset.id));
-    await loadAdminServices();
-  }
-  async function loadAdminServices(){
-    const host=$("#adminServices");
-    if(!host)return;
-    if(!can("manage_services")){host.innerHTML='<div class="empty">لا تملك صلاحية إدارة الخدمات.</div>';return}
-    const {data,error}=await sb.from("services").select("id,name,category,description,price,currency,is_active").order("created_at",{ascending:false}).limit(100);
-    if(error){host.innerHTML='<div class="empty">تعذر تحميل قائمة الخدمات.</div>';return}
-    host.innerHTML=data?.length?data.map(s=>`<div class="list-item"><div class="item-top"><b>${esc(s.name)}</b><span class="status">${s.is_active?'نشطة':'متوقفة'}</span></div><p class="muted">${esc(s.category)} · ${money(s.price,s.currency)}</p><div class="service-admin-actions"><button class="btn outline edit-service" data-id="${s.id}">تعديل</button><button class="btn outline toggle-service" data-id="${s.id}" data-active="${s.is_active}">${s.is_active?'إيقاف':'تفعيل'}</button><button class="btn danger delete-service" data-id="${s.id}">حذف</button></div></div>`).join(""):'<div class="empty">لا توجد خدمات.</div>';
-    $$(".edit-service").forEach(b=>b.onclick=async()=>{
-      const item=data.find(x=>x.id===b.dataset.id); if(!item)return;
-      const name=prompt("اسم الخدمة:",item.name); if(name===null)return;
-      const category=prompt("تصنيف الخدمة:",item.category); if(category===null)return;
-      const description=prompt("وصف الخدمة:",item.description||""); if(description===null)return;
-      const priceText=prompt("السعر:",String(item.price)); if(priceText===null)return;
-      const price=Number(priceText); if(!name.trim()||!category.trim()||!Number.isFinite(price)||price<0){toast("تحقق من الاسم والتصنيف والسعر");return}
-      const {error}=await sb.from("services").update({name:name.trim(),category:category.trim(),description:description.trim(),price}).eq("id",item.id);
-      if(error)toast("تعذر تعديل الخدمة: "+error.message);else{toast("تم تعديل الخدمة");await refresh()}
-    });
-    $$(".toggle-service").forEach(b=>b.onclick=async()=>{const active=b.dataset.active!=="true";const {error}=await sb.from("services").update({is_active:active}).eq("id",b.dataset.id);if(error)toast("تعذر تغيير حالة الخدمة: "+error.message);else{toast(active?"تم تفعيل الخدمة":"تم إيقاف الخدمة");await refresh()}});
-    $$(".delete-service").forEach(b=>b.onclick=async()=>{if(!confirm("هل أنت متأكد من حذف الخدمة؟ قد تمنع علاقات الطلبات حذفها؛ يمكنك إيقافها بدلاً من ذلك."))return;const {error}=await sb.from("services").delete().eq("id",b.dataset.id);if(error)toast("تعذر حذف الخدمة. إذا كانت مرتبطة بطلبات، أوقفها بدلاً من حذفها. "+error.message);else{toast("تم حذف الخدمة");await refresh()}});
+    $$(".order-btn").forEach(b=>b.onclick=()=>openOrder(b.dataset.id));
+    if(can('manage_services')){const {data:all}=await sb.from('services').select('id,name,price,currency,is_active').order('created_at',{ascending:false}); $('#adminServices').innerHTML=(all||[]).map(x=>`<div class="list-item"><b>${esc(x.name)}</b><span>${money(x.price,x.currency)} · ${x.is_active?'نشطة':'متوقفة'}</span><button class="btn outline edit-service" data-id="${x.id}" data-name="${esc(x.name)}" data-price="${x.price}">تعديل</button><button class="btn outline toggle-service" data-id="${x.id}" data-active="${x.is_active}">${x.is_active?'إيقاف الخدمة':'تفعيل الخدمة'}</button><button class="btn ghost delete-service" data-id="${x.id}">حذف الخدمة</button></div>`).join('')||'<div class="empty">لا توجد خدمات.</div>'; $$('.edit-service').forEach(b=>b.onclick=async()=>{const name=prompt('اسم الخدمة:',b.dataset.name);if(name===null)return;const price=Number(prompt('السعر:',b.dataset.price));if(!name.trim()||!Number.isFinite(price)||price<0){toast('الاسم أو السعر غير صالح');return}const {error}=await sb.from('services').update({name:name.trim(),price}).eq('id',b.dataset.id);if(error)toast('تعذر تعديل الخدمة: '+error.message);else{toast('تم تعديل الخدمة');await refresh()}}); $$('.toggle-service').forEach(b=>b.onclick=async()=>{const {error}=await sb.from('services').update({is_active:b.dataset.active!=='true'}).eq('id',b.dataset.id);if(error)toast('تعذر تعديل الخدمة: '+error.message);else{toast('تم تحديث الخدمة');await refresh()}}); $$('.delete-service').forEach(b=>b.onclick=async()=>{if(!confirm('هل تريد حذف هذه الخدمة؟'))return;const {error}=await sb.from('services').delete().eq('id',b.dataset.id);if(error)toast('تعذر حذف الخدمة: '+error.message);else{toast('تم حذف الخدمة');await refresh()}})}
   }
   async function loadOrders(){
     if(!currentUser){$("#ordersList").innerHTML='<div class="empty">سجّل الدخول لعرض طلباتك.</div>';$("#heroOrders").textContent="—";return}
-    const {data,error}=await sb.from("orders").select("id,service_name,amount,currency,status,created_at,admin_note,customer_comment,reply_email,admin_reply").order("created_at",{ascending:false}).limit(30);
+    const {data,error}=await sb.from("orders").select("id,service_name,amount,currency,status,created_at,admin_note,customer_comment,device_email,reply_email,admin_reply").order("created_at",{ascending:false}).limit(30);
     if(error){$("#ordersList").innerHTML='<div class="empty">تعذر تحميل الطلبات.</div>';return}
     $("#heroOrders").textContent=(data||[]).length;
-    $("#ordersList").innerHTML=data?.length?data.map(o=>`<div class="list-item"><div class="item-top"><b>${esc(o.service_name)}</b><span class="status">${esc(o.status)}</span></div><span>${money(o.amount,o.currency)} · ${new Date(o.created_at).toLocaleDateString("ar")} · ${o.id.slice(0,8)}</span>${o.admin_reply?`<div class="reply-box"><b>رد الإدارة</b><p>${esc(o.admin_reply)}</p></div>`:'<p class="muted">لم ترد الإدارة على هذا الطلب بعد.</p>'}<form class="order-comment-form stack" data-id="${o.id}"><label>تعليقك على الطلب<textarea name="comment" rows="2" maxlength="2000" placeholder="اكتب استفسارك أو تفاصيل إضافية...">${esc(o.customer_comment||"")}</textarea></label><label>البريد الإلكتروني للرد<input name="email" type="email" maxlength="254" required value="${esc(o.reply_email||currentUser.email||"")}" placeholder="name@example.com"></label><button class="btn outline" type="submit">حفظ التعليق والبريد</button></form>${o.status==="completed"?`<button class="btn outline rate-btn" data-id="${o.id}">قيّم الخدمة</button>`:""}</div>`).join(""):'<div class="empty">لا توجد طلبات بعد.</div>';
+    $("#ordersList").innerHTML=data?.length?data.map(o=>`<div class="list-item"><div class="item-top"><b>${esc(o.service_name)}</b><span class="status">${esc(o.status)}</span></div><span>${money(o.amount,o.currency)} · ${new Date(o.created_at).toLocaleDateString("ar")} · ${o.id.slice(0,8)}</span><p><b>بريد الجهاز:</b> ${esc(o.device_email||"غير مضاف")}</p>${o.admin_reply?`<div class="reply-box"><b>رد الإدارة</b><p>${esc(o.admin_reply)}</p></div>`:'<p class="muted">لم ترد الإدارة على هذا الطلب بعد.</p>'}<form class="order-comment-form stack" data-id="${o.id}"><label>تعليقك على الطلب<textarea name="comment" rows="2" maxlength="2000" placeholder="اكتب استفسارك أو تفاصيل إضافية...">${esc(o.customer_comment||"")}</textarea></label><label>البريد الإلكتروني للرد<input name="email" type="email" maxlength="254" required value="${esc(o.reply_email||currentUser.email||"")}" placeholder="name@example.com"></label><button class="btn outline" type="submit">حفظ التعليق والبريد</button></form>${o.status==="completed"&&o.admin_reply?`<button class="btn outline rate-btn" data-id="${o.id}">قيّم الخدمة</button>`:""}</div>`).join(""):'<div class="empty">لا توجد طلبات بعد.</div>';
     $$(".order-comment-form").forEach(form=>form.onsubmit=async e=>{e.preventDefault();const f=new FormData(form);const {error}=await sb.rpc("submit_order_comment",{p_order_id:form.dataset.id,p_comment:String(f.get("comment")||""),p_reply_email:String(f.get("email")||"").trim()});if(error)toast("تعذر حفظ التعليق: "+error.message);else{toast("تم حفظ تعليقك وبريد الرد");await loadOrders()}});
     $$(".rate-btn").forEach(b=>b.onclick=()=>reviewOrder(b.dataset.id));
   }
@@ -77,6 +60,7 @@
     if(error){$("#ledgerList").innerHTML='<div class="empty">تعذر تحميل الحركات.</div>';return}
     $("#ledgerList").innerHTML=data?.length?data.map(t=>`<div class="list-item"><div class="item-top"><b>${esc(t.kind)}</b><span class="price">${money(t.amount,t.currency)}</span></div><span class="muted">${esc(t.note||"")} · ${new Date(t.created_at).toLocaleString("ar")}</span></div>`).join(""):'<div class="empty">لا توجد حركات مالية.</div>';
   }
+  async function loadDepositHistory(){if(!currentUser){$('#depositHistory').innerHTML='<div class="empty">سجّل الدخول لعرض طلبات الشحن.</div>';return}const {data,error}=await sb.from('deposit_requests').select('id,amount,currency,reference,receipt_note,admin_reply,status,created_at').order('created_at',{ascending:false}).limit(20);if(error){$('#depositHistory').innerHTML='<div class="empty">تعذر تحميل طلبات الشحن.</div>';return}$('#depositHistory').innerHTML=(data||[]).map(d=>`<div class="list-item"><div class="item-top"><b>${money(d.amount,d.currency)}</b><span class="status">${esc(d.status)}</span></div><p>الإشعار: ${esc(d.receipt_note||d.reference||'—')}</p><p>رد الإدارة: ${esc(d.admin_reply||'بانتظار رد الإدارة')}</p></div>`).join('')||'<div class="empty">لا توجد طلبات شحن.</div>'}
   async function loadReviews(){
     const {data,error}=await sb.from("reviews").select("rating,comment,created_at").eq("is_published",true).order("created_at",{ascending:false}).limit(9);
     if(error){console.warn(error);return}
@@ -84,27 +68,23 @@
   }
   async function loadAdmin(){
     if(can("review_deposits")){
-      const {data}=await sb.from("deposit_requests").select("id,user_id,amount,currency,reference,status,created_at").eq("status","pending").order("created_at",{ascending:true}).limit(50);
-      $("#depositQueue").innerHTML=data?.length?data.map(d=>`<div class="list-item"><b>${money(d.amount,d.currency)}</b><span class="muted">${esc(d.reference||"بدون مرجع")} · ${new Date(d.created_at).toLocaleString("ar")}</span><button class="btn gold approve-deposit" data-id="${d.id}">اعتماد الشحن بعد التحقق</button></div>`).join(""):'<div class="empty">لا توجد طلبات شحن معلقة.</div>';
-      $$(".approve-deposit").forEach(b=>b.onclick=async()=>{const {error}=await sb.rpc("admin_approve_deposit",{p_deposit_id:b.dataset.id});if(error)toast("لم يتم الاعتماد: "+error.message);else{toast("تم اعتماد طلب الشحن");await refresh()}})
+      const {data}=await sb.from("deposit_requests").select("id,user_id,amount,currency,reference,receipt_note,reply_email,admin_reply,status,created_at").eq("status","pending").order("created_at",{ascending:true}).limit(50);
+      $("#depositQueue").innerHTML=data?.length?data.map(d=>`<div class="list-item"><b>${money(d.amount,d.currency)}</b><span>مرجع: ${esc(d.reference||"غير مضاف")}</span><p>إشعار العميل: ${esc(d.receipt_note||"لا يوجد")}</p><p>بريد الرد: ${esc(d.reply_email||"غير مضاف")}</p><label>رد الإدارة<textarea class="deposit-reply" data-id="${d.id}" rows="2">${esc(d.admin_reply||"")}</textarea></label><button class="btn outline save-deposit-reply" data-id="${d.id}">حفظ الرد للعميل</button><button class="btn gold approve-deposit" data-id="${d.id}">اعتماد الشحن بعد التحقق</button><button class="btn ghost reject-deposit" data-id="${d.id}">رفض الطلب</button></div>`).join(""):'<div class="empty">لا توجد طلبات شحن معلقة.</div>';
+      $$('.approve-deposit').forEach(b=>b.onclick=async()=>{const {error}=await sb.rpc('admin_approve_deposit',{p_deposit_id:b.dataset.id});if(error)toast('لم يتم الاعتماد: '+error.message);else{toast('تم اعتماد طلب الشحن');await refresh()}});
+      $$('.save-deposit-reply').forEach(b=>b.onclick=async()=>{const reply=$(`.deposit-reply[data-id="${b.dataset.id}"]`).value;const {error}=await sb.rpc('admin_reply_to_deposit',{p_deposit_id:b.dataset.id,p_reply:reply,p_status:'pending'});if(error)toast('تعذر حفظ الرد: '+error.message);else toast('تم حفظ الرد')});
+      $$('.reject-deposit').forEach(b=>b.onclick=async()=>{const {error}=await sb.rpc('admin_reply_to_deposit',{p_deposit_id:b.dataset.id,p_reply:'تم رفض طلب الشحن. يرجى التواصل مع الإدارة إذا كنت تعتقد أن هذا خطأ.',p_status:'rejected'});if(error)toast('تعذر رفض الطلب: '+error.message);else{toast('تم رفض الطلب');await refresh()}})
     } else $("#depositQueue").innerHTML='<div class="empty">لا تملك صلاحية مراجعة الشحن.</div>';
     if(can("manage_orders")){
-      const {data,error:ordersError}=await sb.from("orders").select("id,user_id,service_name,amount,currency,status,created_at,customer_comment,reply_email,admin_reply").order("created_at",{ascending:false}).limit(40);
-      $("#adminOrders").innerHTML=ordersError?'<div class="empty">تعذر تحميل الطلبات. نفّذ تحديث قاعدة البيانات أولاً.</div>':data?.length?data.map(o=>`<div class="list-item"><div class="item-top"><b>${esc(o.service_name)}</b><span class="status">${esc(o.status)}</span></div><span>${money(o.amount,o.currency)} · ${o.id.slice(0,8)}</span><p><b>تعليق العميل:</b> ${esc(o.customer_comment||"لا يوجد تعليق")}</p><p><b>بريد الرد:</b> ${esc(o.reply_email||"غير مضاف")}</p><label>الرد الرسمي<textarea class="admin-reply" data-id="${o.id}" rows="3" maxlength="4000" placeholder="اكتب رد الإدارة هنا...">${esc(o.admin_reply||"")}</textarea></label><button class="btn gold save-reply" data-id="${o.id}">حفظ الرد</button><label>حالة الطلب<select class="order-status" data-id="${o.id}"><option value="pending" ${o.status==="pending"?"selected":""}>قيد الانتظار</option><option value="processing" ${o.status==="processing"?"selected":""}>جارٍ العمل</option><option value="completed" ${o.status==="completed"?"selected":""}>مكتمل</option><option value="cancelled" ${o.status==="cancelled"?"selected":""}>ملغي</option></select></label><button class="btn outline save-status" data-id="${o.id}">حفظ الحالة</button></div>`).join(""):'<div class="empty">لا توجد طلبات.</div>';
+      const {data,error:ordersError}=await sb.from("orders").select("id,user_id,service_name,amount,currency,status,created_at,customer_comment,device_email,reply_email,admin_reply").order("created_at",{ascending:false}).limit(40);
+      $("#adminOrders").innerHTML=ordersError?'<div class="empty">تعذر تحميل الطلبات. نفّذ تحديث قاعدة البيانات أولاً.</div>':data?.length?data.map(o=>`<div class="list-item"><div class="item-top"><b>${esc(o.service_name)}</b><span class="status">${esc(o.status)}</span></div><span>${money(o.amount,o.currency)} · ${o.id.slice(0,8)}</span><p><b>بريد الجهاز:</b> ${esc(o.device_email||"غير مضاف")}</p><p><b>تفاصيل العميل:</b> ${esc(o.customer_comment||"لا يوجد تعليق")}</p><p><b>بريد الرد:</b> ${esc(o.reply_email||"غير مضاف")}</p><label>الرد الرسمي<textarea class="admin-reply" data-id="${o.id}" rows="3" maxlength="4000" placeholder="اكتب رد الإدارة هنا...">${esc(o.admin_reply||"")}</textarea></label><button class="btn gold save-reply" data-id="${o.id}">حفظ الرد</button><label>حالة الطلب<select class="order-status" data-id="${o.id}"><option value="pending" ${o.status==="pending"?"selected":""}>قيد الانتظار</option><option value="processing" ${o.status==="processing"?"selected":""}>جارٍ العمل</option><option value="completed" ${o.status==="completed"?"selected":""}>مكتمل</option><option value="cancelled" ${o.status==="cancelled"?"selected":""}>ملغي</option></select></label><button class="btn outline save-status" data-id="${o.id}">حفظ الحالة</button></div>`).join(""):'<div class="empty">لا توجد طلبات.</div>';
       $$(".save-reply").forEach(b=>b.onclick=async()=>{const reply=$(`.admin-reply[data-id="${b.dataset.id}"]`).value;const {error}=await sb.rpc("admin_reply_to_order",{p_order_id:b.dataset.id,p_reply:reply});if(error)toast("تعذر حفظ الرد: "+error.message);else{toast("تم حفظ الرد الرسمي");await refresh()}});
       $$(".save-status").forEach(b=>b.onclick=async()=>{const status=$(`.order-status[data-id="${b.dataset.id}"]`).value;const {error}=await sb.rpc("admin_update_order_status",{p_order_id:b.dataset.id,p_status:status,p_note:null});if(error)toast("تعذر تعديل الحالة: "+error.message);else{toast("تم تحديث حالة الطلب");await refresh()}})
     }else $("#adminOrders").innerHTML='<div class="empty">لا تملك صلاحية إدارة الطلبات.</div>';
     $("#serviceForm").classList.toggle("hidden",!can("manage_services"));
   }
-  async function refresh(){await loadProfile();renderUser();await Promise.all([loadServices(),loadOrders(),loadLedger(),loadReviews()]);await loadAdmin()}
-  async function placeOrder(id){
-    if(!requireLogin())return;
-    const service=services.find(s=>s.id===id);if(!service)return;
-    if(!confirm(`تأكيد طلب ${service.name} بسعر ${money(service.price,service.currency)}؟ سيتم خصم الرصيد عند نجاح الطلب.`))return;
-    const {error}=await sb.rpc("create_service_order",{p_service_id:id});
-    if(error){toast("لم يتم إنشاء الطلب: "+error.message);return}
-    toast("تم إنشاء الطلب وخصم الرصيد بنجاح");await refresh();
-  }
+  async function refresh(){await loadProfile();renderUser();await Promise.all([loadServices(),loadOrders(),loadLedger(),loadReviews(),loadBankDetails(),loadDepositHistory()]);await loadAdmin()}
+  function openOrder(id){if(!requireLogin())return;const service=services.find(x=>x.id===id);if(!service)return;const form=$('#orderForm');form.reset();form.elements.service_id.value=id;form.elements.reply_email.value=currentUser.email||'';$('#orderModalTitle').textContent=`طلب ${service.name} — ${money(service.price,service.currency)}`;$('#orderModal').classList.remove('hidden')}
+  async function onOrderSubmit(e){e.preventDefault();if(!requireLogin())return;const f=new FormData(e.currentTarget),serviceId=String(f.get('service_id')),device_email=String(f.get('device_email')||'').trim(),reply_email=String(f.get('reply_email')||'').trim(),comment=String(f.get('comment')||'').trim();const {error}=await sb.rpc('create_service_order_details',{p_service_id:serviceId,p_device_email:device_email,p_reply_email:reply_email,p_comment:comment});if(error){toast('لم يتم إنشاء الطلب: '+error.message);return}$('#orderModal').classList.add('hidden');toast('تم إرسال الطلب وخصم الرصيد بنجاح');await refresh();showPage('page-orders')}
   async function reviewOrder(orderId){
     if(!requireLogin())return;
     const rating=Number(prompt("قيّم الخدمة من 1 إلى 5:","5"));if(!Number.isInteger(rating)||rating<1||rating>5){toast("التقييم يجب أن يكون من 1 إلى 5");return}
@@ -166,11 +146,12 @@
   }
   async function onDeposit(e){
     e.preventDefault();if(!requireLogin())return;
-    const f=new FormData(e.currentTarget),amount=Number(f.get("amount")),currency=String(f.get("currency")),reference=String(f.get("reference")||"");
-    const {error}=await sb.from("deposit_requests").insert({user_id:currentUser.id,amount,currency,reference,status:"pending"});
+    const f=new FormData(e.currentTarget),amount=Number(f.get("amount")),currency=String(f.get("currency")),reference=String(f.get("reference")||""),receipt_note=String(f.get("receipt_note")||""),reply_email=String(f.get("reply_email")||"").trim();
+    const {error}=await sb.from("deposit_requests").insert({user_id:currentUser.id,amount,currency,reference,receipt_note,reply_email,status:"pending"});
     if(error){toast("تعذر إرسال طلب الشحن: "+error.message);return}
     toast("تم إرسال طلب الشحن للمراجعة، لم تتم إضافة الرصيد بعد.");e.currentTarget.reset();
   }
+  async function onBankSave(e){e.preventDefault();if(!can('manage_services')){toast('لا تملك صلاحية تعديل بيانات التحويل');return}const f=new FormData(e.currentTarget);for(const key of ['bank_name','bank_account','bank_instructions']){const {error}=await sb.from('platform_settings').upsert({key,value:String(f.get(key)||'').trim(),updated_by:currentUser.id},{onConflict:'key'});if(error){toast('تعذر حفظ بيانات التحويل: '+error.message);return}}toast('تم حفظ بيانات التحويل');await loadBankDetails()}
   async function onAddService(e){
     e.preventDefault();if(!can("manage_services")){toast("لا تملك صلاحية إضافة الخدمات");return}
     const f=new FormData(e.currentTarget);
@@ -180,7 +161,8 @@
   async function init(){
     $("#heroLogin").onclick=authOpen;$("#closeAuth").onclick=authClose;$("#authModal").onclick=e=>{if(e.target.id==="authModal")authClose()};
     $$(".tab").forEach(b=>b.onclick=()=>authTab(b.dataset.tab));$("#loginForm").addEventListener("submit",onLogin);$("#signupForm").addEventListener("submit",onSignup);
-    $("#profileForm").addEventListener("submit",onProfileSave);
+    initPages(); $("#profileForm").addEventListener("submit",onProfileSave);
+    $("#orderForm").addEventListener("submit",onOrderSubmit); $("#closeOrder").onclick=()=>$("#orderModal").classList.add("hidden"); $("#orderModal").onclick=e=>{if(e.target.id==="orderModal")$("#orderModal").classList.add("hidden")}; $("#bankForm").addEventListener("submit",onBankSave);
     $("#transferForm").addEventListener("submit",onTransfer);$("#depositForm").addEventListener("submit",onDeposit);$("#serviceForm").addEventListener("submit",onAddService);
     $("#logoutBtn").onclick=async()=>{await sb.auth.signOut();currentUser=null;profile=null;await refresh();toast("تم تسجيل الخروج")};
     if(!configured||!window.supabase){$("#serviceGrid").innerHTML='<div class="empty">الموقع جاهز للتهيئة: عدّل config.js بقيم مشروع Supabase، ثم نفّذ schema.sql.</div>';$("#heroLogin").onclick=()=>toast("أكمل إعداد Supabase في config.js أولاً");return}
