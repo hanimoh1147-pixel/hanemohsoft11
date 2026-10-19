@@ -48,6 +48,7 @@
   <section id="admin" class="section hidden"><div class="section-title"><div><span class="eyebrow">إدارة المنصة</span><h2>لوحة الإدارة</h2></div><span class="pill">صلاحيات حسب الحساب</span></div>
     <div class="admin-grid">
       <div class="box"><h3>إضافة خدمة</h3><form id="serviceForm" class="stack"><label>اسم الخدمة<input name="name" required></label><label>التصنيف<input name="category" required placeholder="FRP / iCloud / برمجة"></label><label>الوصف<textarea name="description" rows="2"></textarea></label><label>السعر<input name="price" type="number" min="0" step="0.01" required></label><label>العملة<select name="currency"><option>USD</option></select></label><button class="btn gold" type="submit">حفظ الخدمة</button></form></div>
+      <div class="box"><h3>إدارة الخدمات</h3><p class="muted">تعديل بيانات الخدمات أو حذفها أو إيقافها من هنا.</p><div id="adminServices" class="list"><div class="empty">جارٍ تحميل الخدمات…</div></div></div>
       <div class="box"><h3>اعتماد طلب شحن</h3><div id="depositQueue" class="list"><div class="empty">لا توجد طلبات أو لا تملك الصلاحية.</div></div></div>
       <div class="box"><h3>طلبات العملاء</h3><div id="adminOrders" class="list"><div class="empty">لا توجد طلبات أو لا تملك الصلاحية.</div></div></div>
     </div>

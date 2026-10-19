@@ -40,6 +40,27 @@
     services=data||[];
     $("#serviceGrid").innerHTML=services.length?services.map(s=>`<article class="service-card"><div class="service-icon">${esc((s.category||"HS").slice(0,2))}</div><h3>${esc(s.name)}</h3><p>${esc(s.description||s.category||"خدمة رقمية")}</p><div class="service-foot"><span class="price">${money(s.price,s.currency)}</span><button class="btn outline order-btn" data-id="${s.id}">اطلب الخدمة</button></div></article>`).join(""):'<div class="empty">لا توجد خدمات منشورة حتى الآن.</div>';
     $$(".order-btn").forEach(b=>b.onclick=()=>placeOrder(b.dataset.id));
+    await loadAdminServices();
+  }
+  async function loadAdminServices(){
+    const host=$("#adminServices");
+    if(!host)return;
+    if(!can("manage_services")){host.innerHTML='<div class="empty">لا تملك صلاحية إدارة الخدمات.</div>';return}
+    const {data,error}=await sb.from("services").select("id,name,category,description,price,currency,is_active").order("created_at",{ascending:false}).limit(100);
+    if(error){host.innerHTML='<div class="empty">تعذر تحميل قائمة الخدمات.</div>';return}
+    host.innerHTML=data?.length?data.map(s=>`<div class="list-item"><div class="item-top"><b>${esc(s.name)}</b><span class="status">${s.is_active?'نشطة':'متوقفة'}</span></div><p class="muted">${esc(s.category)} · ${money(s.price,s.currency)}</p><div class="service-admin-actions"><button class="btn outline edit-service" data-id="${s.id}">تعديل</button><button class="btn outline toggle-service" data-id="${s.id}" data-active="${s.is_active}">${s.is_active?'إيقاف':'تفعيل'}</button><button class="btn danger delete-service" data-id="${s.id}">حذف</button></div></div>`).join(""):'<div class="empty">لا توجد خدمات.</div>';
+    $$(".edit-service").forEach(b=>b.onclick=async()=>{
+      const item=data.find(x=>x.id===b.dataset.id); if(!item)return;
+      const name=prompt("اسم الخدمة:",item.name); if(name===null)return;
+      const category=prompt("تصنيف الخدمة:",item.category); if(category===null)return;
+      const description=prompt("وصف الخدمة:",item.description||""); if(description===null)return;
+      const priceText=prompt("السعر:",String(item.price)); if(priceText===null)return;
+      const price=Number(priceText); if(!name.trim()||!category.trim()||!Number.isFinite(price)||price<0){toast("تحقق من الاسم والتصنيف والسعر");return}
+      const {error}=await sb.from("services").update({name:name.trim(),category:category.trim(),description:description.trim(),price}).eq("id",item.id);
+      if(error)toast("تعذر تعديل الخدمة: "+error.message);else{toast("تم تعديل الخدمة");await refresh()}
+    });
+    $$(".toggle-service").forEach(b=>b.onclick=async()=>{const active=b.dataset.active!=="true";const {error}=await sb.from("services").update({is_active:active}).eq("id",b.dataset.id);if(error)toast("تعذر تغيير حالة الخدمة: "+error.message);else{toast(active?"تم تفعيل الخدمة":"تم إيقاف الخدمة");await refresh()}});
+    $$(".delete-service").forEach(b=>b.onclick=async()=>{if(!confirm("هل أنت متأكد من حذف الخدمة؟ قد تمنع علاقات الطلبات حذفها؛ يمكنك إيقافها بدلاً من ذلك."))return;const {error}=await sb.from("services").delete().eq("id",b.dataset.id);if(error)toast("تعذر حذف الخدمة. إذا كانت مرتبطة بطلبات، أوقفها بدلاً من حذفها. "+error.message);else{toast("تم حذف الخدمة");await refresh()}});
   }
   async function loadOrders(){
     if(!currentUser){$("#ordersList").innerHTML='<div class="empty">سجّل الدخول لعرض طلباتك.</div>';$("#heroOrders").textContent="—";return}

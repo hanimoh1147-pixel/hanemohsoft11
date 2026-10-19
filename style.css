@@ -14,3 +14,7 @@
 
 #profile .box{max-width:760px}
 #profileMessage{overflow-wrap:anywhere}
+
+/* أدوات إدارة الخدمات */
+.service-admin-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.btn.danger{background:#8f2929;color:#fff;border:1px solid #b84a4a}
