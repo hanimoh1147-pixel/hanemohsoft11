@@ -11,3 +11,6 @@
 #adminOrders .admin-reply{width:100%;box-sizing:border-box;margin-top:6px}
 #adminOrders label{display:block;margin-top:10px}
 #adminOrders p{overflow-wrap:anywhere}
+
+#profile .box{max-width:760px}
+#profileMessage{overflow-wrap:anywhere}

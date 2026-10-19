@@ -15,14 +15,21 @@
   function requireLogin(){if(!currentUser){authOpen();return false}return true}
   async function loadProfile(){
     if(!currentUser){profile=null;return}
-    const {data,error}=await sb.from("profiles").select("id,username,display_name,role,permissions,wallet_balance").eq("id",currentUser.id).maybeSingle();
+    const {data,error}=await sb.from("profiles").select("id,username,display_name,phone,role,permissions,wallet_balance").eq("id",currentUser.id).maybeSingle();
     if(error){console.error(error);return}
     profile=data;
   }
   function can(permission){return !!profile && (profile.role==="owner" || profile.role==="admin" && (profile.permissions||[]).includes(permission))}
   function renderUser(){
+    $("#profile").classList.toggle("hidden",!currentUser);
     $("#userLabel").textContent=profile?`مرحباً، ${profile.display_name||profile.username}`:"زائر";
     $("#logoutBtn").classList.toggle("hidden",!currentUser);
+    if(profile && currentUser){
+      $("#profileDisplayName").value=profile.display_name||"";
+      $("#profileUsername").value=profile.username||"";
+      $("#profileEmail").value=currentUser.email||"";
+      $("#profilePhone").value=profile.phone||"";
+    }
     $("#admin").classList.toggle("hidden",!(can("manage_services")||can("review_deposits")||can("manage_orders")));
     $("#walletBalance").textContent=profile?money(profile.wallet_balance,cfg.DEFAULT_CURRENCY||"USD"):"—";
     $("#heroBalance").textContent=profile?money(profile.wallet_balance,cfg.DEFAULT_CURRENCY||"USD"):"—";
@@ -108,6 +115,27 @@
     if(data.session){authClose();await refresh();toast("تم إنشاء الحساب")}else msg($("#authMessage"),"تم إنشاء الحساب. افتح بريدك لتأكيده، ثم سجّل الدخول.");
     e.currentTarget.reset();
   }
+  async function onProfileSave(e){
+    e.preventDefault();
+    if(!requireLogin())return;
+    const f=new FormData(e.currentTarget);
+    const display_name=String(f.get("display_name")||"").trim();
+    const username=String(f.get("username")||"").trim().toLowerCase();
+    const email=String(f.get("email")||"").trim().toLowerCase();
+    const phone=String(f.get("phone")||"").trim();
+    if(display_name.length<1){msg($("#profileMessage"),"اكتب الاسم أولاً.");return}
+    if(!/^[a-zA-Z0-9_]{3,24}$/.test(username)){msg($("#profileMessage"),"اسم المستخدم يجب أن يكون 3–24 حرفًا إنجليزيًا أو رقمًا أو _.");return}
+    if(!email || !email.includes("@")){msg($("#profileMessage"),"أدخل بريدًا إلكترونيًا صحيحًا.");return}
+    msg($("#profileMessage"),"جارٍ حفظ البيانات…");
+    const {error:profileError}=await sb.from("profiles").update({display_name,username,phone}).eq("id",currentUser.id);
+    if(profileError){msg($("#profileMessage"),profileError.code==="23505"?"اسم المستخدم مستخدم بالفعل. اختر اسمًا آخر.":"تعذر حفظ الملف الشخصي: "+profileError.message);return}
+    if(email!==String(currentUser.email||"").toLowerCase()){
+      const {error:emailError}=await sb.auth.updateUser({email});
+      if(emailError){msg($("#profileMessage"),"تم حفظ بيانات الملف، لكن تعذر طلب تغيير البريد: "+emailError.message);await refresh();return}
+      msg($("#profileMessage"),"تم حفظ الملف. تحقق من رسالة Supabase لتأكيد تغيير البريد الإلكتروني.");
+    } else msg($("#profileMessage"),"تم حفظ الملف الشخصي بنجاح.");
+    await refresh();
+  }
   async function onTransfer(e){
     e.preventDefault();if(!requireLogin())return;
     const f=new FormData(e.currentTarget),recipient=String(f.get("recipient")).trim().toLowerCase(),amount=Number(f.get("amount")),note=String(f.get("note")||"");
@@ -131,6 +159,7 @@
   async function init(){
     $("#heroLogin").onclick=authOpen;$("#closeAuth").onclick=authClose;$("#authModal").onclick=e=>{if(e.target.id==="authModal")authClose()};
     $$(".tab").forEach(b=>b.onclick=()=>authTab(b.dataset.tab));$("#loginForm").addEventListener("submit",onLogin);$("#signupForm").addEventListener("submit",onSignup);
+    $("#profileForm").addEventListener("submit",onProfileSave);
     $("#transferForm").addEventListener("submit",onTransfer);$("#depositForm").addEventListener("submit",onDeposit);$("#serviceForm").addEventListener("submit",onAddService);
     $("#logoutBtn").onclick=async()=>{await sb.auth.signOut();currentUser=null;profile=null;await refresh();toast("تم تسجيل الخروج")};
     if(!configured||!window.supabase){$("#serviceGrid").innerHTML='<div class="empty">الموقع جاهز للتهيئة: عدّل config.js بقيم مشروع Supabase، ثم نفّذ schema.sql.</div>';$("#heroLogin").onclick=()=>toast("أكمل إعداد Supabase في config.js أولاً");return}

@@ -12,7 +12,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="#"><span class="brand-mark">HS</span><span>هاني <b>سوفت</b><small>منصة خدمات الهواتف والسوفت وير</small></span></a>
-  <nav><a href="#services">الخدمات</a><a href="#wallet">المحفظة</a><a href="#orders">طلباتي</a><a href="#reviews">التقييمات</a></nav>
+  <nav><a href="#services">الخدمات</a><a href="#wallet">المحفظة</a><a href="#orders">طلباتي</a><a href="#profile">الملف الشخصي</a><a href="#reviews">التقييمات</a></nav>
   <div class="top-actions"><span id="userLabel" class="muted">زائر</span><button id="logoutBtn" class="btn ghost hidden">تسجيل خروج</button></div>
 </header>
 <main>
@@ -37,6 +37,10 @@
       <form id="depositForm" class="stack"><label>المبلغ المطلوب<input name="amount" type="number" min="1" step="0.01" required></label><label>العملة<select name="currency"><option value="USD">USD — دولار (العملة المتاحة حاليًا)</option></select></label><label>مرجع العملية أو التفاصيل<input name="reference" maxlength="160" placeholder="لا تضع بيانات بطاقة أو كلمة مرور"></label><button class="btn outline" type="submit">إرسال طلب الشحن</button></form>
     </div>
     <div class="box" id="orders"><span class="eyebrow">متابعة التنفيذ</span><h2>طلباتي</h2><p class="muted">يمكنك متابعة الطلبات وتقييم الخدمة بعد إكمالها.</p><div id="ordersList" class="list"><div class="empty">سجّل الدخول لعرض طلباتك.</div></div><hr><h3>حركات المحفظة</h3><div id="ledgerList" class="list"><div class="empty">سجّل الدخول لعرض الحركات.</div></div></div>
+  </section>
+
+  <section class="section hidden" id="profile"><div class="section-title"><div><span class="eyebrow">حسابك</span><h2>الملف الشخصي</h2></div><p>تعديل بيانات حسابك فقط.</p></div>
+    <div class="box" style="max-width:760px"><form id="profileForm" class="stack"><label>الاسم<input name="display_name" id="profileDisplayName" required maxlength="80" autocomplete="name"></label><label>اسم المستخدم<input name="username" id="profileUsername" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]+" autocomplete="username"><small class="muted">من 3 إلى 24 حرفًا إنجليزيًا أو رقمًا أو شرطة سفلية.</small></label><label>البريد الإلكتروني<input name="email" id="profileEmail" type="email" required autocomplete="email"><small class="muted">قد يرسل Supabase رسالة تأكيد إلى البريد الجديد.</small></label><label>رقم الهاتف<input name="phone" id="profilePhone" type="tel" maxlength="30" autocomplete="tel" placeholder="رقم الهاتف مع رمز الدولة عند الحاجة"></label><button class="btn gold" type="submit">حفظ التعديلات</button><p id="profileMessage" class="message" aria-live="polite"></p></form></div>
   </section>
 
   <section class="section" id="reviews"><div class="section-title"><div><span class="eyebrow">آراء العملاء</span><h2>تقييمات المنصة</h2></div></div><div id="reviewGrid" class="review-grid"><div class="empty">لا توجد تقييمات منشورة بعد.</div></div></section>
